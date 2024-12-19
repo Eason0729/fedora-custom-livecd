@@ -1,0 +1,105 @@
+#!/bin/bash
+set -e
+
+# prompt for release
+echo -n "Enter Fedora release number (e.g. 41): "
+read release
+
+# retry if invalid release
+while [[ ! "$release" =~ ^[0-9]+$ ]]; do
+    echo "Invalid release"
+    echo -n "Enter Fedora release number (e.g. 41): "
+    read release
+done
+
+echo generating kickstart file for Fedora $release
+
+# clone fedora-kickstarts if not already cloned
+if [[ ! -d fedora-kickstarts ]]; then
+    git clone --branch "f$release" https://pagure.io/fedora-kickstarts.git
+fi
+
+
+# get list of spins
+spins=()
+for file in fedora-kickstarts/fedora-live-*.ks; do
+    if [[ -e "$file" ]]; then
+        spins+=($(echo "$file" | sed -E 's/^fedora-kickstarts\/fedora-live-(.*)\.ks$/\1/'))
+    fi
+done
+
+# prompt for spin
+echo "Available spins: "
+for spin in ${spins[@]}; do
+    echo -e "  - \033[1;34m$spin\033[0m"
+done
+
+echo -n "Enter the name of the spin you want to use (e.g. kde): "
+read spin
+
+# retry if invalid spin
+while [[ ! " ${spins[@]} " =~ " $spin " ]]; do
+    echo "Invalid spin"
+    echo -n "Enter the name of the spin you want to use (e.g. kde): "
+    read spin
+done
+
+# prompt for additional packages
+packages=""
+echo -n "Enter additional packages to install (e.g. firefox kde-apps): "
+read packages
+
+packages=($packages)
+
+echo "Additional packages: ${packages[@]}"
+
+echo "Selected configuration:"
+echo -e "Fedora release: \033[1;34m$release\033[0m"
+echo -e "Spin: \033[1;34m$spin\033[0m"
+
+if [[ ${#packages[@]} -gt 0 ]]; then
+    echo "Additional packages:"
+    for package in ${packages[@]}; do
+        echo -e "  - \033[1;34m$package\033[0m"
+    done
+fi
+
+echo -n "Is the configuration correct? (y/n): "
+
+read confirm
+
+if [[ "$confirm" != "y" ]]; then
+    echo "Configuration not confirmed, exiting..."
+    exit 0
+fi
+
+# prepare kickstart file
+echo "# Custom Fedora Live kickstart file" > fedora-kickstarts/fedora-live-custom.ks
+echo "%packages" >> fedora-kickstarts/fedora-live-custom.ks
+for package in ${packages[@]}; do
+    echo "$package" >> fedora-kickstarts/fedora-live-custom.ks
+done
+echo -e "%end\n" >> fedora-kickstarts/fedora-live-custom.ks
+
+cat fedora-kickstarts/fedora-live-$spin.ks >> fedora-kickstarts/fedora-live-custom.ks
+
+echo "Custom kickstart file generated: fedora-kickstarts/fedora-live-custom.ks"
+
+ksflatten --config fedora-kickstarts/fedora-live-custom.ks -o fedora-kickstarts/flat-fedora-live-custom.ks
+
+echo "Flattened kickstart file generated: fedora-kickstarts/flat-fedora-live-custom.ks"
+
+mock -r fedora-$release-x86_64 --init
+mock -r fedora-$release-x86_64 --install lorax-lmc-novirt vim-minimal pykickstart livecd-tools
+
+echo "mock environment \"fedora-$release-x86_64\"initialized"
+
+rm -rf img
+
+cd fedora-kickstarts && livemedia-creator --ks flat-fedora-live-custom.ks --no-virt --resultdir ../img --project Fedora-Custom-Live --make-iso --volid "Fedora-Custom-$release" --iso-only --iso-name "Fedora-KDE-$release-x86_64.iso" --releasever $release --macboot
+
+echo "ISO image generated: /var/lib/mock/fedora-$release-x86_64/root/var/lmc/*.iso"
+
+echo "cleaning up..."
+
+mock -r "fedora-$release-x86_64" --clean
