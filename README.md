@@ -12,6 +12,7 @@ How to use: run script and answer question
 ./make-iso
 ```
 
+![screenshot](./screenshot.png)
 
 ## Trouble shooting
 
