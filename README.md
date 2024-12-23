@@ -1,5 +1,9 @@
 # custom livecd
 
+A bash script to help you generate fedora livecd iso with custom package/desktop environment...
+
+## Usage
+
 > [!IMPORTANT]
 > Besure `mock`, `ksflatten`, `livemedia-creator` are installed on your fedora
 
